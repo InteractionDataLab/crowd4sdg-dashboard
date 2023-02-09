@@ -1,0 +1,636 @@
+---
+title: "Crowd4SDG Visualisation Dashboard"
+author: "Interaction Data Lab - LPI"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: columns
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Registration
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+
+```{r ,echo=FALSE}
+library(readxl)
+library(digest)
+library(dplyr)
+
+load("../data/registration_gear2.RData")
+reg2 = reg
+
+fin2 = read.csv("../data/final_gear2.csv", stringsAsFactors = FALSE)
+fin3 = read.csv("../data/final_gear3.csv", stringsAsFactors = FALSE)
+
+#fin3 = fin3 %>% rowwise() %>% mutate(email_hash = digest(trimws(Email.Address), algo = "sha256"))
+#write.csv(fin3, "../data/final_gear3.csv")
+
+#reg3 = readxl::read_excel("../data/registration_gear3.xlsx")
+reg3 = read.csv("../data/registration_gear3.csv", stringsAsFactors = FALSE)
+
+#reg3 = reg3 %>% rowwise() %>% mutate(email_hash = digest(trimws(Main.email), algo = "sha256"))
+#write.csv(reg3, "../data/registration_gear3.csv")
+```
+
+### 1. Geographical Diversity across the GEARs
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(stringr)
+library(flexdashboard)
+#library(dplyr)
+library(plotly)
+library(igraph)
+library(visNetwork)
+library(tidyr)
+library(colorspace)
+library(harrypotter)
+source("custom_functions.R")
+
+t1 = reg2 %>% group_by(country_orig) %>% summarise(count_g2 = n())
+t2 = reg3 %>% group_by(Country.of.origin) %>% summarise(count_g3 = n())
+colnames(t2) = c("country_orig", "count_g3")
+
+t = merge(t1, t2, by.x = "country_orig", by.y = "country_orig", all.x = TRUE, all.y = TRUE)
+#t = reshape2::melt(t)
+
+
+#world_map <- map_data("world")
+#world_map <- subset(world_map, region != "Antarctica")
+
+#plt = ggplot(t1) +
+#  geom_map(
+#    dat = world_map, map = world_map, aes(map_id = region),
+#    fill = "white", color = "#7f7f7f", size = 0.25
+#  ) +
+#  geom_map(map = world_map, aes(map_id = country_resid, fill = count), size = 0.25) +
+#  scale_fill_gradient(low = "#fff7bc", high = "#cc4c02", name = "Total Cases") +
+#  expand_limits(x = world_map$long, y = world_map$lat) + theme_bw() + xlab("") + ylab("")
+
+
+#widgetframe::frameWidget(ggiraph(code=print(plt)))
+
+#ggplotly(plt)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(countrycode)
+
+t$code = countrycode(t$country_orig,'country.name','iso3c')
+
+t[is.na(t)] = 0
+t$overall = t$count_g2+t$count_g3
+t[t == 0] = NA
+
+l <- list(color = toRGB("grey"), width = 0.5)
+g <- list(showframe = TRUE, showcoastlines = TRUE, projection = list(type = 'Mercator'))
+
+scale1 <- list(visible=TRUE, showlegend=FALSE, title="# of Participants", reversescale = TRUE)
+
+p <- plot_geo(t) %>%
+
+  add_trace(
+    z = ~overall, color = ~overall,name='Total Participants',
+    text = ~country_orig, locations = ~code, colors = "YlOrRd", marker = list(line = l),colorbar=list(title='# of Participants'),visible=TRUE) %>%
+  
+  add_trace(
+    z = ~count_g2, color = ~count_g2,name='GEAR 2',
+    text = ~country_orig, locations = ~code, colors = "YlOrRd", marker = list(line = l),colorbar=list(title='# of Participants'),visible=TRUE) %>%
+
+  add_trace(z = ~count_g3, color = ~count_g3,name='GEAR 3',colors = "YlOrRd", text = ~country_orig, locations = ~code, marker = list(line = l),colorbar=list(title='# of Participants'),visible=TRUE) %>% 
+  
+  colorbar(title = '# of Particpants') %>%
+  
+#Code for the dropdown.
+  layout(
+  title = "Participant Origins in Crowd4SDG",
+  geo=g,
+  updatemenus = list(
+    list(
+      buttons = list(
+        list(method = "restyle",
+            args = list("visible",list(TRUE, FALSE, FALSE)),
+            #showscale = scale1,
+            label = "OVERALL"),
+        
+        list(method = "restyle",
+             args = list("visible",list(FALSE, TRUE, FALSE)),
+             showscale = scale1,
+             label = "GEAR 2"),
+        
+        list(method = "restyle",
+             args = list("visible", list(FALSE, FALSE, TRUE)),
+             showscale=scale1,
+             label = "GEAR 3")
+      ))
+  ))
+
+```
+
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+
+p
+
+```
+
+### 2. Age of Participants (To check the one person in Gear 3 with a error DoB)
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#reg3$`Date of birth` = as.POSIXct(as.numeric(reg3$`Date of birth`), origin = "1970-01-01")
+
+reg2$birthday = strptime(as.character(reg2$birthday), "%m/%d/%Y")
+reg2$age = floor(lubridate::time_length(difftime("2022-11-29", as.Date(reg2$birthday)), "years"))
+
+reg3$Date.of.birth = strptime(as.character(reg3$Date.of.birth), "%m/%d/%Y")
+reg3$age = floor(lubridate::time_length(difftime("2022-11-29", as.Date(reg3$Date.of.birth)), "years"))
+
+#plt = ggplot() + geom_boxplot(data = reg2, aes(x = "GEAR2", y = age)) + geom_boxplot(data = reg3[reg3$age<100,], aes(x = "GEAR3", y = age)) + theme_bw(base_size = 15) + ylab("Age in Years") + xlab("")
+
+df = rbind(data.frame(age = reg2$age, key = "GEAR2"), data.frame(age = reg3$age, key = "GEAR3"))
+df = as.data.frame(df)
+
+plt = ggplot(df[df$age<100,], aes(y = key, x = age, fill = key, group = key)) + ggdist::stat_halfeye() + theme_bw(base_size = 15) + ylab("") + xlab("Age in Years") + theme(legend.position = "none")
+
+print(plt)
+#ggplotly(plt)
+
+```
+
+
+Column
+-----------------------------------------------------------------------
+
+
+
+
+### 3. Background
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+b1 = reg2[,c("ID","background")]
+b1$var = "GEAR 2"
+b1$background = as.character(b1$background)
+b11 = clean_split_mcq(b1[,c("var", "background")])
+b11 = b11 %>% group_by(variable) %>% summarise(GEAR2 = n())
+
+b2 = reg3[,c(11,12)]
+colnames(b2) = c("remove", "background")
+b2$var = "GEAR 2"
+b2 = b2 %>% select(-remove)
+b22 = clean_split_mcq(b2[,c("var", "background")])
+
+b22$variable[b22$variable == "Criminology and security studies"] = "Criminology and Security Studies"
+b22$variable[b22$variable == "Food science and technology"] = "Food Sciences"
+b22$variable[b22$variable == "I'm starting my bachelor studies in business administration next year"] = "Other"
+
+b22 = b22 %>% group_by(variable) %>% summarise(GEAR3 = n())
+
+b = merge(b11, b22, by.x = "variable", by.y = "variable", all.x = TRUE, all.y = TRUE)
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+b$total = rowSums(cbind(b$GEAR2, b$GEAR3), na.rm = TRUE)
+
+temp = reshape2::melt(b, id.var = "variable")
+colnames(temp) = c("background", "variable", "value")
+
+temp$background[temp$background == "conservation and biodiversity"] = "Conservation and Biodiversity"
+
+#temp$sum = sum(temp$, na.rm = TRUE)
+#
+#temp[is.na(temp)] = 0
+
+a = temp[temp$variable == "total",]
+#a = a[!duplicated(a),]
+bck = a$background[order(a$value)]
+temp$background = factor(temp$background, levels = bck)
+
+plt = ggplot(temp[!temp$variable == "total",]) + geom_tile(aes(x = variable, y = background, fill = value), lwd = 1.5, linetype = 1) + scale_fill_gradientn(colors = hp(n = 7, option = "Always")) + theme_bw(base_size = 15) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank()) + ylab("") + xlab("") + geom_text(data = temp[!temp$variable == "total",], aes(x = variable, y = background, label = value), color = "white") + ggtitle("") + theme(legend.position = "none")
+
+#print(plt)
+ggplotly(plt)
+
+```
+
+Interactions
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+load("../data/surveys3.RData")
+
+int3 = interactions %>% group_by(user_id, to, survey_field_id) %>% summarise(count = n())
+map3 = read.csv("../data/map3.csv", stringsAsFactors = FALSE)
+colnames(map3) = c("Team", "user_id")
+
+t = pals::alphabet(length(unique(map3$Team)))
+sd = data.frame(color = unname(t), name = unique(map3$Team))
+
+map3 = merge(map3, sd, by.x = "Team", by.y = "name", all.x = TRUE, all.y = TRUE)
+map3$color[map3$Team == "Organizing Team"] = "#BABABA"
+map3 = rbind(map3[!map3$Team == "Organizing Team",], map3[map3$Team == "Organizing Team",])
+
+g3 = graph_from_data_frame(int3, directed = TRUE, vertices = map3[,c(2,1,3)])
+
+load("../data/surveys2.RData")
+
+
+temp = read.csv("../data/slack_map2.csv", stringsAsFactors = FALSE)
+temp = temp[,c("Team", "new_name")]
+temp = temp[!duplicated(temp),]
+
+map2 = read.csv("../data/map2.csv", stringsAsFactors = FALSE)
+map2 = merge(map2, temp, by.x = "Team", by.y = "Team", all.x = TRUE)
+
+t = pals::alphabet(length(unique(map2$Team)))
+
+sd = data.frame(color = unname(t), name = unique(map2$Team))
+map2 = merge(map2, sd, by.x = "Team", by.y = "name", all.x = TRUE, all.y = TRUE)
+map2$color[map2$Team == "Organizing Team"] = "#BABABA"
+
+int2 = interactions %>% group_by(user_id, to, survey_field_id) %>% summarise(count = n())
+g2 = graph_from_data_frame(int2[!int2$to == 34,], directed = TRUE, vertices = map2[,c(2,5,6)])
+V(g2)$Team = V(g2)$new_name
+
+```
+
+
+### GEAR 2 - Know Personally Before
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+visPlot(g2, nodesize = degree(g2, mode = "in"), edgewidth = E(g2)$count, communities = V(g2)$Team, edgelabel = E(g2)$survey_field_id, hidden = (!E(g2)$survey_field_id == "Which of these people did you know personally before?"), seed = 4, color = V(g2)$color)
+
+
+```
+
+### GEAR 3 - Know Personally Before 
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+visPlot(g3, nodesize = degree(g3, mode = "in"), edgewidth = E(g3)$count, communities = V(g3)$Team, edgelabel = E(g3)$survey_field_id, hidden = (!E(g3)$survey_field_id == "Which of these people did you know personally before?"), seed = 4)
+
+```
+
+
+Column
+-----------------------------------------------------------------------
+
+### GEAR 2 - Worked With
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+visPlot(g2, nodesize = degree(g2, mode = "in"), edgewidth = E(g2)$count, communities = V(g2)$Team, edgelabel = E(g2)$survey_field_id, hidden = (!E(g2)$survey_field_id == "Who did you work with last week?"), seed = 4)
+
+```
+
+### GEAR 3 - Worked With
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+visPlot(g3, nodesize = degree(g3, mode = "in"), edgewidth = E(g3)$count, communities = V(g3)$Team, edgelabel = E(g3)$survey_field_id, hidden = (!E(g3)$survey_field_id == "Who did you work with last week?"), seed = 4)
+
+```
+
+Column
+------------------------------------------------------------------------
+
+### GEAR 2 - Seek Advice
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g2, nodesize = degree(g2, mode = "in"), edgewidth = E(g2)$count, communities = V(g2)$Team, edgelabel = E(g2)$survey_field_id, hidden = (!E(g2)$survey_field_id == "Who did you seek advice from last week?"), seed = 4)
+
+```
+
+### GEAR 3 - Seek Advice
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g3, nodesize = degree(g3, mode = "in"), edgewidth = E(g3)$count, communities = V(g3)$Team, edgelabel = E(g3)$survey_field_id, hidden = (!E(g3)$survey_field_id == "Who did you seek advice from last week?"), seed = 4)
+
+```
+
+<!-- Tasks -->
+<!-- ======================================================================= -->
+
+<!-- Column -->
+<!-- ----------------------------------------------------------------------- -->
+
+<!-- ### 1. Tasks Performed  -->
+
+<!-- ```{r, echo=FALSE, warning=FALSE} -->
+
+
+
+<!-- ``` -->
+
+<!-- ```{r, echo=FALSE, warning=FALSE} -->
+
+
+
+<!-- ``` -->
+
+<!-- Column -->
+<!-- ----------------------------------------------------------------------- -->
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+```
+
+Slack
+=======================================================================
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+load("../data/slack2_dashboard.RData")
+
+temp = read.csv("../data/slack_map2.csv", stringsAsFactors = FALSE)
+s2 = read.csv("../data/slack_map21.csv", stringsAsFactors = FALSE)
+
+temp = temp[,c("Team", "new_name")]
+temp = temp[!duplicated(temp),]
+
+smap2 = merge(s2[,c(3,6)], temp, by.x = "Team", by.y = "Team", all.x = TRUE, all.y = TRUE)
+smap2$new_name[smap2$Team == "Tool Owner"] = "Tool Owner"
+
+men2 = text_mentions
+emo2 = emoticons
+
+load("../data/slack3_dashboard.RData")
+
+#s3 = read.csv("../data/teams3.csv", stringsAsFactors = FALSE, header = FALSE)
+#colnames(s3) = c("team", "name", "email")
+#u3 = users_df[,c("id", "email")]
+
+#smap3 = merge(s3, u3, by.x = "email", by.y = "email", all.x = TRUE, all.y = TRUE)
+smap3 = read.csv("../data/slack_map3.csv", stringsAsFactors = FALSE)
+
+men3 = text_mentions
+emo3 = emoticons
+
+men2 = men2 %>% group_by(message_creator, cited_user) %>% summarise(count = n())
+men2 = men2[!men2$cited_user %in% c("channel", "here", "everyone"),]
+
+emo2 = emo2 %>% group_by(reacted_by, message_creator) %>% summarise(count = n())
+
+g_men2 = graph_from_data_frame(men2, vertices = smap2[,c(2,3)], directed = TRUE)
+V(g_men2)$Team = V(g_men2)$new_name
+g_emo2 = graph_from_data_frame(emo2, vertices = smap2[,c(2,3)], directed = TRUE)
+V(g_emo2)$Team = V(g_emo2)$new_name
+
+men3 = men3 %>% group_by(message_creator, cited_user) %>% summarise(count = n())
+men3 = men3[!men3$cited_user %in% c("channel", "here", "everyone"),]
+
+emo3 = emo3 %>% group_by(reacted_by, message_creator) %>% summarise(count = n())
+
+#Recheck This
+
+exc = c("U047153SCCW","U0478GF14LF")
+
+g_men3 = graph_from_data_frame(men3[!men3$message_creator %in% exc & !men3$cited_user %in% exc,], vertices = smap3[,c(2,6)], directed = TRUE)
+V(g_men3)$Team = V(g_men3)$team
+
+g_emo3 = graph_from_data_frame(emo3, vertices = smap3[,c(2,6)], directed = TRUE)
+V(g_emo3)$Team = V(g_emo3)$team
+
+```
+
+Column
+------------------------------------------------------------------------
+
+### GEAR 2 - Slack Mentions
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g_men2, nodesize = degree(g_men2, mode = "in"), edgewidth = E(g_men2)$count, communities = V(g_men2)$Team, seed = 4)
+
+```
+
+### GEAR 3 - Slack Mentions 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g_men3, nodesize = degree(g_men3, mode = "in"), edgewidth = E(g_men3)$count, communities = V(g_men3)$Team, seed = 4)
+
+```
+
+Column
+------------------------------------------------------------------------
+
+### GEAR 2 - Slack Reactions
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g_emo2, nodesize = degree(g_emo2, mode = "in"), edgewidth = E(g_emo2)$count, communities = V(g_emo2)$Team, seed = 4)
+
+```
+
+### GEAR 3 - Slack Reactions 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+visPlot(g_emo3, nodesize = degree(g_emo3, mode = "in"), edgewidth = E(g_emo3)$count, communities = V(g_emo3)$Team, seed = 4)
+
+```
+
+
+Final Survey
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+
+### 1. Communication Tools
+
+```{r, echo=FALSE, warning=FALSE}
+
+questions = colnames(fin2)
+what_communication = questions[grepl("What.communication", questions)]
+  
+l = c("Never" = 0, "Rarely" = 1, "Sometimes" = 2, "Often" = 3, "Always" = 4)
+
+temp = fin2[,c("Username", "What.is.your.team.", what_communication)]
+temp = reshape2::melt(temp, id = c("Username", "What.is.your.team."))
+
+temp = temp[!temp$value == "",]
+
+temp$value = factor(temp$value, levels =  c("Never", "Rarely", "Sometimes", "Often", "Always"))
+temp$score = l[temp$value]
+
+temp$variable = str_replace(temp$variable, "What.communication.tool.s..did.you.use.during..Open17ClimateGender...", "")
+temp$variable = gsub("\\.", " ", temp$variable)
+
+temp_compr2 = temp %>% group_by(variable) %>% summarise(mean2 = mean(score, na.rm = TRUE), se2 = se(score))
+
+temp_compr2$variable[temp_compr2$variable == "Other   specify in next question  "]  = "Other"
+temp_compr2$variable = trimws(temp_compr2$variable)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+questions = colnames(fin3)
+what_communication = questions[grepl("What.communication", questions)]
+  
+temp = fin3[,c("Email.Address", "What.is.your.team.", what_communication)]
+temp = reshape2::melt(temp, id = c("Email.Address", "What.is.your.team."))
+
+temp = temp[!temp$value == "",]
+
+temp$value = factor(temp$value, levels =  c("Never", "Rarely", "Sometimes", "Often", "Always"))
+temp$score = l[temp$value]
+
+#temp$variable = str_replace(temp$variable, "What communication tool s  did you use during  Open17ClimateJustice   ", "")
+
+temp$variable = str_replace(temp$variable,  "What.communication.tool.s..did.you.use.during..Open17ClimateJustice...", "")
+temp$variable = gsub("\\.", " ", temp$variable)
+
+temp_compr3 = temp %>% group_by(variable) %>% summarise(mean3 = mean(score, na.rm = TRUE), se3 = se(score))
+
+temp_compr3$variable = trimws(temp_compr3$variable)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+comm = merge(temp_compr2, temp_compr3, by.x = "variable", by.y = "variable", all.x = TRUE, all.y = TRUE)
+
+#t = reshape2::melt(comm)
+
+plt = ggplot(comm) + geom_point(aes(y = mean2, x = variable, color = "GEAR2"), position = position_nudge(x = -0.1)) + geom_point(aes(y = mean3, x = variable, color = "GEAR3"), position = position_nudge(x = 0.1)) + theme_bw(base_size = 15) + geom_errorbar(aes(ymin = mean2-se2, ymax = mean2+se2, x = variable, y = mean2, color = "GEAR2"), width = 0, position = position_nudge(x = -0.1)) + geom_errorbar(aes(ymin = mean3-se3, ymax = mean3+se3, x = variable, y = mean3, color = "GEAR3"), width = 0, position = position_nudge(x = 0.1)) + ylab("") + xlab("") + theme(plot.margin = unit(c(1,2,2,2), "cm")) + labs(color = "")#theme(legend.title = element_blank())
+
+plt = plt + scale_y_continuous(labels=names(l), breaks= 0:4, limits=c(0,4)) + theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1)) 
+
+ggplotly(plt, size = 0.8)
+
+#ggplotly(plt)
+
+```
+
+Column
+-----------------------------------------------------------------------
+
+### 2. Program Feedback 
+
+```{r, echo = FALSE, warning = FALSE}
+
+#Which Extend questions
+
+questions = colnames(fin2)
+which_extend = questions[grepl("which.extend", questions)]
+  
+l = c("Strongly disagree" = -2, "Disagree" = -1, "Neither disagree nor agree" = 0, "Agree" = 1, "Strongly agree" = 2)
+
+temp = fin2[,c("Username", "What.is.your.team.", which_extend)]
+temp = reshape2::melt(temp, id = c("Username", "What.is.your.team."))
+
+temp = temp[!temp$value == "",]
+
+temp$value = factor(temp$value, levels =  c("Strongly disagree", "Disagree", "Neither disagree nor agree", "Agree", "Strongly agree"))
+
+temp$score = l[temp$value]
+
+temp$variable = str_replace(temp$variable, "To.which.extend.do.you.agree.to.the.following.statements...", "")
+temp$variable = gsub("\\.", " ", temp$variable)
+#temp$variable = str_replace(temp$variable, "Since I participated in the  Open17ClimateGender", "")
+#temp$variable = str_replace(temp$variable, "Since I participated in  Open17ClimateGender", "")
+
+temp_compr2 = temp %>% group_by(variable) %>% summarise(mean2 = mean(score, na.rm = TRUE), se2 = se(score))
+
+temp_compr2$variable[temp_compr2$variable == "Other   specify in next question  "]  = "Other"
+temp_compr2$variable = trimws(temp_compr2$variable)
+
+
+```
+
+
+```{r, echo = FALSE, warning = FALSE}
+
+#Which Extend questions
+
+questions = colnames(fin3)
+which_extend = questions[grepl("which.extend", questions)]
+  
+l = c("Strongly disagree" = -2, "Disagree" = -1, "Neither disagree nor agree" = 0, "Agree" = 1, "Strongly agree" = 2)
+
+temp = fin3[,c("Email.Address", "What.is.your.team.", which_extend)]
+temp = reshape2::melt(temp, id = c("Email.Address", "What.is.your.team."))
+
+temp = temp[!temp$value == "",]
+
+temp$value = factor(temp$value, levels =  c("Strongly disagree", "Disagree", "Neither disagree nor agree", "Agree", "Strongly agree"))
+
+temp$score = l[temp$value]
+
+temp$variable = str_replace(temp$variable,"To.which.extend.do.you.agree.to.the.following.statements.about.the..Open17ClimateJustice...", "")
+temp$variable = gsub("\\.", " ", temp$variable)
+temp$variable = trimws(temp$variable)
+#temp$variable = str_replace(temp$variable, "Since I participated in the  Open17ClimateGender", "")
+#temp$variable = str_replace(temp$variable, "Since I participated in  Open17ClimateGender", "")
+
+temp_compr3 = temp %>% group_by(variable) %>% summarise(mean3 = mean(score, na.rm = TRUE), se3 = se(score))
+
+temp_compr3$variable[temp_compr3$variable == "Other   specify in next question  "]  = "Other"
+temp_compr3$variable = trimws(temp_compr3$variable)
+
+
+```
+
+```{r, echo = FALSE, warning = FALSE}
+
+#Map final survey names in both Gears - by changing names in GEAR2
+
+temp_compr2$variable[temp_compr2$variable == "The  Open17ClimateGender met the expectations I had of the program"] = "It met the expectations I had of the program"
+temp_compr2$variable[temp_compr2$variable == "I am going to use the knowledge that I gained during the  Open17ClimateGender to further develop my project"] = "I aim to further develop my project"
+temp_compr2$variable[temp_compr2$variable == "I would recommend the  Open17ClimateGender to a friend with similar interests"] = "I would recommend it to a friend with similar interests"
+temp_compr2$variable[temp_compr2$variable == "My team received frequent feedback from the  O17ClimateGender team about our project"] = "We received frequent feedback about our project"
+temp_compr2$variable[temp_compr2$variable == "Since I participated in  Open17ClimateGender  I have improved my ability to address the SDGs"] = "I have improved my ability to address the SDGs"
+temp_compr2$variable[temp_compr2$variable == "Since I participated in  Open17ClimateGender  I have improved my ability to innovate"] = "I have improved my ability to innovate"
+temp_compr2$variable[temp_compr2$variable == "Since I participated in  Open17ClimateGender  I have improved my ability to pitch"] = "I have improved my ability to pitch"
+temp_compr2$variable[temp_compr2$variable == "Since I participated in the  Open17ClimateGender  my understanding of the SDGs has increased"] = "My understanding of the SDGs has increased"
+temp_compr2$variable[temp_compr2$variable == "The  Open17ClimateGender was useful to my project"] = "It was useful to my project"
+temp_compr2$variable[temp_compr2$variable == "The provided feedback was useful to my project"] = "The provided feedback was useful to my project"
+
+temp_compr3$variable[temp_compr3$variable == "My team received frequent feedback from the  O17ClimateGender team about our project"] = "We received frequent feedback about our project"
+temp_compr3$variable[temp_compr3$variable == "I am going to use the knowledge that I gained to further develop my project"] = "I aim to further develop my project"
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+comm = merge(temp_compr2, temp_compr3, by.x = "variable", by.y = "variable", all.x = TRUE, all.y = TRUE)
+
+#t = reshape2::melt(comm)
+
+plt = ggplot(comm) + geom_point(aes(y = mean2, x = variable, color = "GEAR2"), position = position_nudge(x = -0.1)) + geom_point(aes(y = mean3, x = variable, color = "GEAR3"), position = position_nudge(x = 0.1)) + theme_bw(base_size = 15) + geom_errorbar(aes(ymin = mean2-se2, ymax = mean2+se2, x = variable, y = mean2, color = "GEAR2"), width = 0, position = position_nudge(x = -0.1)) + geom_errorbar(aes(ymin = mean3-se3, ymax = mean3+se3, x = variable, y = mean3, color = "GEAR3"), width = 0, position = position_nudge(x = 0.1)) + ylab("") + xlab("") + labs(color = "")
+
+plt = plt + scale_y_continuous(labels=names(l[1:5]), breaks=-2:2, limits=c(-2,2)) + theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1)) + theme(plot.margin = unit(c(2,2,2,2), "cm")) 
+
+ggplotly(plt)
+
+```
